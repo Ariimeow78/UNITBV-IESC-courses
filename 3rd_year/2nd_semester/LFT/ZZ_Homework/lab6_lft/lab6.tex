@@ -1,0 +1,580 @@
+% Created 2026-05-28 Thu 12:05
+% Intended LaTeX compiler: lualatex
+\documentclass[11pt]{article}
+\usepackage{amsmath}
+\usepackage{fontspec}
+\usepackage{graphicx}
+\usepackage{longtable}
+\usepackage{wrapfig}
+\usepackage{rotating}
+\usepackage[normalem]{ulem}
+\usepackage{capt-of}
+\usepackage{hyperref}
+\usepackage{minted}
+\usepackage{fontspec}
+\setmainfont{UT Sans}[
+BoldFont={UT Sans Bold},
+UprightFont={UT Sans Regular},
+FontFace={m}{n}{UT Sans Medium}
+]
+% Fallback fake italic using a slant
+\usepackage{etoolbox}
+\newcommand{\fakeitalic}[1]{{\addfontfeatures{FakeSlant=0.18}#1}}
+\AtBeginDocument{\renewcommand{\emph}[1]{\fakeitalic{#1}}}
+\usepackage[a4paper,margin=3cm]{geometry}
+\usepackage{lastpage}
+\usepackage{fancyhdr}
+\usepackage{lastpage}
+\pagestyle{fancy}                % set fancy style
+\fancyhf{}                        % clear all headers and footers
+\cfoot{\thepage/\pageref*{LastPage}}  % center footer
+\renewcommand{\headrulewidth}{0pt}    % remove header line
+\renewcommand{\footrulewidth}{0pt}    % remove footer line
+% also override plain page style for first page
+\fancypagestyle{plain}{%
+\fancyhf{}%
+\cfoot{\thepage/\pageref*{LastPage}}%
+\renewcommand{\headrulewidth}{0pt}%
+\renewcommand{\footrulewidth}{0pt}%
+}
+\usepackage{url}
+\date{}
+\title{Laborator 6\\\medskip
+\large Limbaje Formale și Translatoare -- Generarea codului intermediar TAC in Rust}
+\hypersetup{
+ pdfauthor={},
+ pdftitle={Laborator 6},
+ pdfkeywords={},
+ pdfsubject={},
+ pdfcreator={Emacs 30.2 (Org mode 9.7.39)}, 
+ pdflang={English}}
+\begin{document}
+
+\maketitle
+\section{Generare TAC manuala}
+\label{sec:orgbc47bc8}
+\subsection{Scrieti manual TAC-ul pentru expresia: \((a + b) * (c - 2)\). Definiti temporarele necesare si ordinea instructiunilor.}
+\label{sec:orga29fecb}
+\begin{minted}[breaklines=true,breakanywhere=true,breaksymbol=,fontsize=\small,linenos=false]{text}
+t0 = a + b
+t1 = c - 2
+t2 = t0 * t1
+\end{minted}
+\subsection{Scrieti manual TAC-ul pentru: \texttt{if (x > 0 \&\& y > 0) \{ z = x + y; \} else \{ z = 0; \}}. Atentie: expresia \texttt{\&\&} trebuie si ea descompusa in temporare.}
+\label{sec:org6d82292}
+\begin{minted}[breaklines=true,breakanywhere=true,breaksymbol=,fontsize=\small,linenos=false]{text}
+t0 = x > 0
+t1 = y > 0
+t2 = t0 And t1
+if t2 goto L_then
+goto L_else
+L_then:
+  t3 = x + y
+  z = t3
+  goto L_end
+L_else:
+  z = 0
+    L_end:
+\end{minted}
+\subsection{Scrieti manual TAC-ul pentru: \texttt{let suma = 0; for i in 0..10 \{ suma = suma + i; \}}. Hint: for se transforma in while.}
+\label{sec:org7c19927}
+\begin{itemize}
+\item Transformare in while:
+\begin{minted}[breaklines=true,breakanywhere=true,breaksymbol=,fontsize=\small,linenos=false]{text}
+  let suma = 0;
+  let i = 0;
+  while i < 10 {
+    suma = suma + i;
+    i = i + 1;
+  }
+\end{minted}
+
+\item TAC:
+\begin{minted}[breaklines=true,breakanywhere=true,breaksymbol=,fontsize=\small,linenos=false]{text}
+  suma = 0
+  i = 0
+  L_start:
+    t0 = i < 10
+    if t0 goto L_body
+    goto L_end
+  L_body:
+    t1 = suma + i
+    suma = t1
+    t2 = i + 1
+    i = t2
+    goto L_start
+  L_end:
+\end{minted}
+\end{itemize}
+\section{Extinderea generatorului}
+\label{sec:org5830313}
+\subsection{Adaugati suportul pentru \texttt{Stmt::Let} cu un \texttt{let} fara initializare \texttt{(let x;)} -- codul generat ar trebui sa emita \texttt{Copy \{ dst: Var(x), src: IntLit(0) \}} ca initializare implicita.}
+\label{sec:org0934c0d}
+\begin{minted}[breaklines=true,breakanywhere=true,breaksymbol=,fontsize=\small,linenos=false]{rust}
+#[derive(Debug, Clone)]
+pub enum Stmt {
+    // Preluate din Lab 5 (nemodificate):
+    Let    { name: String, ty: Option<Type>, init: Option<Expr> },
+    Assign { name: String, value: Expr },
+\end{minted}
+\begin{minted}[breaklines=true,breakanywhere=true,breaksymbol=,fontsize=\small,linenos=false]{rust}
+            // ── Preluat din Lab 5, nemodificat ──────────────────────────
+            Stmt::Let { name, ty: _, init } => {
+                // ty ignorat la generare cod (tipul e verificat de type checker)
+                let src = match init {
+                    Some(expr) => self.gen_expr(expr),
+                    None => Addr::IntLit(0),
+                };
+\end{minted}
+\subsection{Adaugati optimizarea 'eliminarea temporarelor redundante': daca generati \texttt{t0 = x} si imediat dupa \texttt{y = t0}, inlocuiti cu \texttt{y = x} (fara temporar). Implementati aceasta ca post-procesare pe lista de instructiuni.}
+\label{sec:orgaf0c5b7}
+\begin{minted}[breaklines=true,breakanywhere=true,breaksymbol=,fontsize=\small,linenos=false]{rust}
+        for f in &program.functions {
+            self.emit(Instr::Label(f.name.clone()));
+            for s in &f.body {
+                self.gen_stmt(s);
+            }
+            self.emit(Instr::Halt);
+        }
+    }
+
+    /// Afiseaza toate instructiunile generate
+    pub fn print(&self) {
+        for instr in &self.instrs {
+            println!("{}", instr.display());
+        }
+    }
+
+    pub fn optimize_redundant_temps(instrs: &[Instr]) -> Vec<Instr> {
+        let mut out = Vec::new();
+        let mut i = 0usize;
+\end{minted}
+\begin{itemize}
+\item Pipeline:
+\end{itemize}
+\begin{minted}[breaklines=true,breakanywhere=true,breaksymbol=,fontsize=\small,linenos=false]{rust}
+    let mut cg = CodeGen::new();
+    for s in stmts { cg.gen_stmt(s); }
+    cg.instrs = CodeGen::optimize_all(&cg.instrs);
+    let mut interp = Interpreter::new();
+\end{minted}
+\subsection{Adaugati un contor de instructiuni generate si o functie \texttt{stats()} care afiseaza: numarul de temporare utilizate, numarul de etichete, numarul de salturi, numarul de instructiuni aritmetice.}
+\label{sec:org1b845f8}
+\begin{minted}[breaklines=true,breakanywhere=true,breaksymbol=,fontsize=\small,linenos=false]{rust}
+pub struct CodegenStats {
+    pub temporare: usize,
+    pub etichete: usize,
+    pub salturi: usize,
+\end{minted}
+\begin{minted}[breaklines=true,breakanywhere=true,breaksymbol=,fontsize=\small,linenos=false]{rust}
+                if let Instr::Copy { dst: Addr::Temp(t0), src } = &instrs[i] {
+                    if let Instr::Copy { dst, src: Addr::Temp(t1) } = &instrs[i + 1] {
+                        if t0 == t1 {
+                            out.push(Instr::Copy { dst: dst.clone(), src: src.clone() });
+                            i += 2;
+                            continue;
+                        }
+                    }
+                }
+            }
+            out.push(instrs[i].clone());
+            i += 1;
+        }
+        out
+    }
+
+    pub fn optimize_constant_folding(instrs: &[Instr]) -> Vec<Instr> {
+        fn key_of(addr: &Addr) -> Option<String> {
+            match addr {
+                Addr::Var(s) => Some(s.clone()),
+\end{minted}
+\section{Interpretorul si verificarea corectitudinii}
+\label{sec:org3fde7eb}
+\subsection{Adaugati in Interpreter capacitatea de a initializa variabile inainte de executie: o metoda \texttt{set\_var(name: \&str, val: i64)}. Testati cu programul \texttt{max(a, b)} cu valorile \(a=7\), \(b=3\).}
+\label{sec:orge31e161}
+\begin{minted}[breaklines=true,breakanywhere=true,breaksymbol=,fontsize=\small,linenos=false]{rust}
+    pub fn set_var(&mut self, name: &str, val: i64) {
+        self.memory.insert(name.to_string(), val);
+\end{minted}
+\begin{minted}[breaklines=true,breakanywhere=true,breaksymbol=,fontsize=\small,linenos=false]{rust}
+    #[test]
+    fn constant_folding_turns_binop_into_copy() {
+        use crate::tac::{Addr, BinOp as TBinOp, Instr};
+        let input = vec![
+            Instr::BinOp {
+                dst: Addr::Temp(0),
+                op: TBinOp::Mul,
+                left: Addr::IntLit(3),
+                right: Addr::IntLit(4),
+            },
+        ];
+        let out = CodeGen::optimize_constant_folding(&input);
+        assert_eq!(out.len(), 1);
+        match &out[0] {
+            Instr::Copy { dst: Addr::Temp(0), src: Addr::IntLit(12) } => {}
+            _ => panic!("constant folding did not produce expected copy"),
+        }
+    }
+
+    #[test]
+    fn dce_removes_instructions_after_return_until_label() {
+        use crate::tac::{Addr, Instr};
+\end{minted}
+\begin{verbatim}
+$ cargo test interpreter_set_var_works_for_max_like_program -- --nocapture
+running 1 test
+test tests::interpreter_set_var_works_for_max_like_program ... ok
+test result: ok. 1 passed; 0 failed
+\end{verbatim}
+\subsection{Adaugati in Interpreter un mod de tracing: dupa fiecare instructiune executata, afisati starea memoriei (toate variabilele si temporarele). Rulati tracing pentru \texttt{while}-ul din Test 3 si verificati ca \(i\) creste de la 0 la 5.}
+\label{sec:orgc7fb639}
+\begin{minted}[breaklines=true,breakanywhere=true,breaksymbol=,fontsize=\small,linenos=false]{rust}
+    fn dump_memory(&self) -> String {
+        let mut entries: Vec<_> = self.memory.iter().collect();
+        entries.sort_by(|a, b| a.0.cmp(b.0));
+        let parts: Vec<String> = entries
+            .into_iter()
+            .map(|(k, v)| format!("{}={}", k, v))
+            .collect();
+        format!("{{{}}}", parts.join(", "))
+\end{minted}
+\begin{minted}[breaklines=true,breakanywhere=true,breaksymbol=,fontsize=\small,linenos=false]{rust}
+                }
+                Instr::Label(_) => { pc += 1; }
+\end{minted}
+\begin{minted}[breaklines=true,breakanywhere=true,breaksymbol=,fontsize=\small,linenos=false]{rust}
+    /// Ruleaza programul TAC si returneaza valoarea returnata (sau None)
+    pub fn run(&mut self, instrs: &[Instr]) -> Result<Option<i64>, String> {
+\end{minted}
+\begin{minted}[breaklines=true,breakanywhere=true,breaksymbol=,fontsize=\small,linenos=false]{rust}
+            Instr::Copy { dst: Addr::Var("x".into()), src: Addr::IntLit(99) },
+            Instr::Label("L1".into()),
+            Instr::Copy { dst: Addr::Var("y".into()), src: Addr::IntLit(7) },
+        ];
+        let out = CodeGen::optimize_dce(&input);
+        assert_eq!(out.len(), 3);
+        assert!(matches!(out[0], Instr::Return(_)));
+        assert!(matches!(out[1], Instr::Label(_)));
+        assert!(matches!(out[2], Instr::Copy { .. }));
+    }
+
+    #[test]
+    fn combined_optimizations_reduce_expr_to_x_eq_14() {
+        let stmts = vec![
+            Stmt::Let { name: "x".into(), ty: None, init: Some(
+                Expr::BinOp {
+                    op: BinOp::Add,
+                    left: Box::new(Expr::IntLit(2)),
+                    right: Box::new(Expr::BinOp {
+                        op: BinOp::Mul,
+                        left: Box::new(Expr::IntLit(3)),
+                        right: Box::new(Expr::IntLit(4)),
+                    }),
+                }
+            )},
+        ];
+        let mut cg = CodeGen::new();
+        for s in &stmts { cg.gen_stmt(s); }
+\end{minted}
+\begin{verbatim}
+$ cargo test interpreter_trace_runs_for_while_to_five -- --nocapture
+running 1 test
+step=1 pc=1 mem={i=0}
+...
+step=26 pc=8 mem={i=5, t0=1, t1=5}
+...
+test tests::interpreter_trace_runs_for_while_to_five ... ok
+test result: ok. 1 passed; 0 failed
+\end{verbatim}
+\subsection{Adaugati detectia buclelor infinite: daca programul executa mai mult de 10000 de pasi fara \texttt{return} sau \texttt{halt}, returneaza \texttt{Err} cu mesaj. Testati cu un \texttt{while(true) \{\}}.}
+\label{sec:org51a3dfb}
+\begin{minted}[breaklines=true,breakanywhere=true,breaksymbol=,fontsize=\small,linenos=false]{rust}
+    ) -> Result<Option<i64>, String> {
+        // Construieste un index de etichete: label -> index in instrs
+        let labels = Self::labels_index(instrs);
+
+        let mut pc: usize = 0;
+        let mut steps: usize = 0;
+        while pc < instrs.len() {
+            steps += 1;
+\end{minted}
+\begin{minted}[breaklines=true,breakanywhere=true,breaksymbol=,fontsize=\small,linenos=false]{rust}
+        match &out[0] {
+            crate::tac::Instr::Copy { dst: crate::tac::Addr::Var(name), src: crate::tac::Addr::IntLit(14) } => {
+                assert_eq!(name, "x");
+            }
+            _ => panic!("expected x = 14 after combined optimizations"),
+        }
+    }
+
+    #[test]
+    fn interpreter_set_var_works_for_max_like_program() {
+        use crate::tac::{Addr, BinOp as TBinOp, Instr};
+        let instrs = vec![
+\end{minted}
+\begin{verbatim}
+$ cargo test interpreter_detects_infinite_loop -- --nocapture
+running 1 test
+Executie oprita: posibil loop infinit (peste 10000 pasi)
+test tests::interpreter_detects_infinite_loop ... ok
+test result: ok. 1 passed; 0 failed
+\end{verbatim}
+\section{Optimizari simple pe TAC}
+\label{sec:orge637f9a}
+\subsection{Implementati 'constant folding': daca in \texttt{BinOp} ambii operanzi sunt literale, calculati rezultatul la compilare si inlocuiti instructiunea cu \texttt{Copy}. Exemplu: \texttt{t0 = 3 * 4} devine \texttt{Copy \{ dst: t0, src: IntLit(12) \}}.}
+\label{sec:org455b227}
+\begin{minted}[breaklines=true,breakanywhere=true,breaksymbol=,fontsize=\small,linenos=false]{rust}
+                    if let Instr::Copy { dst, src: Addr::Temp(t1) } = &instrs[i + 1] {
+                        if t0 == t1 {
+                            out.push(Instr::Copy { dst: dst.clone(), src: src.clone() });
+                            i += 2;
+                            continue;
+                        }
+                    }
+                }
+            }
+            out.push(instrs[i].clone());
+            i += 1;
+        }
+        out
+    }
+
+    pub fn optimize_constant_folding(instrs: &[Instr]) -> Vec<Instr> {
+        fn key_of(addr: &Addr) -> Option<String> {
+            match addr {
+                Addr::Var(s) => Some(s.clone()),
+                Addr::Temp(n) => Some(format!("t{}", n)),
+                _ => None,
+            }
+        }
+        fn b2i(v: bool) -> i64 { if v { 1 } else { 0 } }
+        let mut known: HashMap<String, i64> = HashMap::new();
+        let mut out = Vec::with_capacity(instrs.len());
+        for instr in instrs {
+            match instr {
+                Instr::BinOp { dst, op, left, right } => {
+                    let l = if let Some(k) = key_of(left) {
+                        known.get(&k).copied().map(Addr::IntLit).unwrap_or_else(|| left.clone())
+                    } else {
+                        left.clone()
+                    };
+                    let r = if let Some(k) = key_of(right) {
+                        known.get(&k).copied().map(Addr::IntLit).unwrap_or_else(|| right.clone())
+                    } else {
+                        right.clone()
+                    };
+                    if let (Addr::IntLit(li), Addr::IntLit(ri)) = (&l, &r) {
+                        let folded = match op {
+                            TBinOp::Add => Some(Addr::IntLit(li + ri)),
+                            TBinOp::Sub => Some(Addr::IntLit(li - ri)),
+                            TBinOp::Mul => Some(Addr::IntLit(li * ri)),
+                            TBinOp::Div => Some(Addr::IntLit(li / ri)),
+                            TBinOp::Eq => Some(Addr::IntLit(b2i(li == ri))),
+                            TBinOp::Ne => Some(Addr::IntLit(b2i(li != ri))),
+                            TBinOp::Lt => Some(Addr::IntLit(b2i(li < ri))),
+                            TBinOp::Gt => Some(Addr::IntLit(b2i(li > ri))),
+                            TBinOp::Le => Some(Addr::IntLit(b2i(li <= ri))),
+                            TBinOp::Ge => Some(Addr::IntLit(b2i(li >= ri))),
+                            TBinOp::And => Some(Addr::IntLit(b2i(*li != 0 && *ri != 0))),
+                            TBinOp::Or => Some(Addr::IntLit(b2i(*li != 0 || *ri != 0))),
+                        };
+                        if let Some(src) = folded {
+                            if let (Some(k), Addr::IntLit(v)) = (key_of(dst), &src) {
+                                known.insert(k, *v);
+                            }
+                            out.push(Instr::Copy { dst: dst.clone(), src });
+                            continue;
+                        }
+                    }
+                    if let Some(k) = key_of(dst) {
+                        known.remove(&k);
+                    }
+                    out.push(Instr::BinOp {
+                        dst: dst.clone(),
+                        op: op.clone(),
+                        left: l,
+                        right: r,
+                    });
+                }
+                Instr::Copy { dst, src } => {
+                    let rewritten_src = if let Some(k) = key_of(src) {
+                        known.get(&k).copied().map(Addr::IntLit).unwrap_or_else(|| src.clone())
+                    } else {
+                        src.clone()
+                    };
+                    if let Some(k) = key_of(dst) {
+\end{minted}
+\begin{minted}[breaklines=true,breakanywhere=true,breaksymbol=,fontsize=\small,linenos=false]{rust}
+    #[test]
+    fn constant_folding_turns_binop_into_copy() {
+        use crate::tac::{Addr, BinOp as TBinOp, Instr};
+        let input = vec![
+            Instr::BinOp {
+                dst: Addr::Temp(0),
+                op: TBinOp::Mul,
+                left: Addr::IntLit(3),
+                right: Addr::IntLit(4),
+            },
+        ];
+        let out = CodeGen::optimize_constant_folding(&input);
+        assert_eq!(out.len(), 1);
+        match &out[0] {
+            Instr::Copy { dst: Addr::Temp(0), src: Addr::IntLit(12) } => {}
+            _ => panic!("constant folding did not produce expected copy"),
+        }
+\end{minted}
+\subsection{Implementati 'dead code elimination': daca dupa un \texttt{Return} sau \texttt{Goto} urmeaza instructiuni pana la urmatoarea \texttt{Label}, acele instructiuni nu pot fi executate niciodata. Eliminati-le.}
+\label{sec:orgb14925a}
+\begin{minted}[breaklines=true,breakanywhere=true,breaksymbol=,fontsize=\small,linenos=false]{rust}
+                        } else {
+                            known.remove(&k);
+                        }
+                    }
+                    out.push(Instr::Copy { dst: dst.clone(), src: rewritten_src });
+                }
+                Instr::Label(_) | Instr::Goto(_) | Instr::IfGoto { .. } | Instr::Return(_) | Instr::Halt => {
+                    known.clear();
+                    out.push(instr.clone());
+                }
+            }
+        }
+        out
+    }
+
+    pub fn optimize_dce(instrs: &[Instr]) -> Vec<Instr> {
+        let mut out = Vec::with_capacity(instrs.len());
+\end{minted}
+\subsection{Combinati cele doua optimizari si testati cu expresia \(x = 2 + 3 * 4\). Fara optimizari: 3 instructiuni. Cu constant folding + DCE: ar trebui sa ramana doar \(x = 14\).}
+\label{sec:orgdc347d4}
+\begin{minted}[breaklines=true,breakanywhere=true,breaksymbol=,fontsize=\small,linenos=false]{rust}
+                Instr::IfGoto { cond, .. } => {
+                    if let Addr::Temp(n) = cond { needed.insert(*n, ()); }
+                    keep_rev.push(instr.clone());
+                }
+                Instr::Return(addr) => {
+\end{minted}
+\begin{minted}[breaklines=true,breakanywhere=true,breaksymbol=,fontsize=\small,linenos=false]{rust}
+    #[test]
+    fn combined_optimizations_reduce_expr_to_x_eq_14() {
+        let stmts = vec![
+            Stmt::Let { name: "x".into(), ty: None, init: Some(
+                Expr::BinOp {
+                    op: BinOp::Add,
+                    left: Box::new(Expr::IntLit(2)),
+                    right: Box::new(Expr::BinOp {
+                        op: BinOp::Mul,
+                        left: Box::new(Expr::IntLit(3)),
+                        right: Box::new(Expr::IntLit(4)),
+                    }),
+                }
+            )},
+        ];
+        let mut cg = CodeGen::new();
+        for s in &stmts { cg.gen_stmt(s); }
+        let out = CodeGen::optimize_all(&cg.instrs);
+        assert_eq!(out.len(), 1);
+        match &out[0] {
+            crate::tac::Instr::Copy { dst: crate::tac::Addr::Var(name), src: crate::tac::Addr::IntLit(14) } => {
+                assert_eq!(name, "x");
+            }
+            _ => panic!("expected x = 14 after combined optimizations"),
+        }
+\end{minted}
+\section{Pipeline integrat cu Labs anterioare}
+\label{sec:org743347f}
+\subsection{Conectati generatorul TAC cu type checker-ul din Lab 5: type checker-ul ruleaza primul, iar daca nu sunt erori, se apeleaza generatorul TAC. Daca sunt erori semantice, generarea TAC se opreste.}
+\label{sec:org651742b}
+\begin{minted}[breaklines=true,breakanywhere=true,breaksymbol=,fontsize=\small,linenos=false]{rust}
+fn run_pipeline(stmts: &[Stmt], ret_ty: Type) -> Result<Option<i64>, Vec<String>> {
+    let program = Program {
+        functions: vec![FnDecl {
+            name: "main".into(),
+            params: vec![],
+            ret_ty,
+            body: stmts.to_vec(),
+        }],
+    };
+    let mut checker = TypeChecker::new();
+    checker.check_program(&program);
+    if checker.table.has_errors() {
+        return Err(checker.table.errors);
+    }
+
+    let mut cg = CodeGen::new();
+    for s in stmts { cg.gen_stmt(s); }
+    cg.instrs = CodeGen::optimize_all(&cg.instrs);
+    let mut interp = Interpreter::new();
+    interp.run(&cg.instrs).map_err(|e| vec![e])
+\end{minted}
+\begin{minted}[breaklines=true,breakanywhere=true,breaksymbol=,fontsize=\small,linenos=false]{rust}
+    #[test]
+    fn pipeline_is_semantic_then_codegen() {
+        let stmts = vec![
+            Stmt::Assign { name: "x".into(), value: Expr::IntLit(1) },
+            Stmt::Return(Expr::IntLit(0)),
+        ];
+        let err = run_pipeline(&stmts, Type::Int).expect_err("semantic check should fail first");
+        assert!(err.iter().any(|e| e.contains("Variabila nedeclarata")));
+\end{minted}
+\subsection{Adaugati suportul pentru functii: \texttt{Stmt::FnDecl \{ name, params, body \}}. Genereaza o eticheta cu numele functiei, urmat de TAC-ul corpului, terminat cu halt. Apelul de functie ramane ca exercitiu avansat.}
+\label{sec:org2028315}
+\begin{minted}[breaklines=true,breakanywhere=true,breaksymbol=,fontsize=\small,linenos=false]{rust}
+    // NOU in Lab 6:
+    While { cond: Expr, body: Vec<Stmt> },
+    FnDecl { name: String, params: Vec<String>, body: Vec<Stmt> },
+\end{minted}
+\begin{minted}[breaklines=true,breakanywhere=true,breaksymbol=,fontsize=\small,linenos=false]{rust}
+            Stmt::FnDecl { name, params: _, body } => {
+                self.emit(Instr::Label(name.clone()));
+                for s in body { self.gen_stmt(s); }
+                self.emit(Instr::Halt);
+            }
+        }
+    }
+
+    pub fn gen_program(&mut self, program: &Program) {
+        for f in &program.functions {
+            self.emit(Instr::Label(f.name.clone()));
+            for s in &f.body {
+                self.gen_stmt(s);
+            }
+            self.emit(Instr::Halt);
+        }
+\end{minted}
+\subsection{Extindeti interpretorul sa suporte variabile de mediu (environment) la nivel de program, nu doar de functie. Testati un program cu doua functii simple.}
+\label{sec:orgfa3d80d}
+\begin{minted}[breaklines=true,breakanywhere=true,breaksymbol=,fontsize=\small,linenos=false]{rust}
+    pub fn run_function(&mut self, instrs: &[Instr], func_label: &str) -> Result<Option<i64>, String> {
+        let labels = Self::labels_index(instrs);
+        let start = labels
+            .get(func_label)
+            .copied()
+            .ok_or_else(|| format!("Functie necunoscuta: {}", func_label))?;
+        self.run_from_pc(instrs, start + 1, false, 10000)
+\end{minted}
+\begin{minted}[breaklines=true,breakanywhere=true,breaksymbol=,fontsize=\small,linenos=false]{rust}
+    fn interpreter_environment_is_program_level_for_two_functions() {
+        use crate::tac::{Addr, BinOp as TBinOp, Instr};
+        let instrs = vec![
+            Instr::Label("f_set".into()),
+            Instr::Copy { dst: Addr::Var("g".into()), src: Addr::IntLit(41) },
+            Instr::Halt,
+            Instr::Label("f_inc".into()),
+            Instr::BinOp {
+                dst: Addr::Temp(0),
+                op: TBinOp::Add,
+                left: Addr::Var("g".into()),
+                right: Addr::IntLit(1),
+            },
+            Instr::Copy { dst: Addr::Var("g".into()), src: Addr::Temp(0) },
+            Instr::Return(Addr::Var("g".into())),
+            Instr::Halt,
+        ];
+        let mut interp = Interpreter::new();
+        let r1 = interp.run_function(&instrs, "f_set").expect("f_set should execute");
+        assert_eq!(r1, None);
+        let r2 = interp.run_function(&instrs, "f_inc").expect("f_inc should execute");
+        assert_eq!(r2, Some(42));
+    }
+\end{minted}
+\end{document}

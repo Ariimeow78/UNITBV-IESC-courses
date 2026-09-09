@@ -1,0 +1,3 @@
+Al doilea fisier text.
+Are inca o aparitie pentru cuvantul shell.
+si litere mici pentru test.

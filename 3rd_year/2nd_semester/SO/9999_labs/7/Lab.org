@@ -1,0 +1,95 @@
+#+TITLE: N17 - teme lab07
+#+AUTHOR: BAJCSI Elias-Robert
+#+options: date:nil
+#+INCLUDE: ../config.org
+
+
+* Programare awk
+
+Problemele de mai jos se vor rezolva prin script-uri shell ce vor apela utilitarul awk
+
+** Sa se afiseze ora curenta sub forma
+
+ora xx, xx minute, xx secunde
+#+INCLUDE: ./src/awk_01_current_time.sh src sh
+
+[[./screenshots/awk/1.png]]
+
+** Sa se afiseze procesele ce au consumat mai mult de 10s de unitate centrala.
+#+INCLUDE: ./src/awk_02_cpu_over_10s.sh src sh
+
+[[./screenshots/awk/2.png]]
+
+** Sa se listeze cele mai mari 10 fisiere dintr-un director dat ca parametru si din subdirectoarele sale, in ordine descrescatoare a lungimii
+#+INCLUDE: ./src/awk_03_top10_largest.sh src sh
+
+[[./screenshots/awk/3.png]]
+
+** Se da, in fisierul studenti.lst lista studentilor in formatul:
+
+Nume Prenume nume-utilizator grupa
+
+(coloanele sunt separate prin blancuri; numele compuse sunt separate prin '-'; exemplu: Popescu Ana-Maria pa12345 221 . Dandu-se o lista de grupe, sa se trimita fiecarui student cate un mesaj (mesajul se da intr-un fisier al carui nume este de asemenea dat ca parametru).
+#+INCLUDE: ./src/awk_04_send_messages.sh src sh
+
+[[./screenshots/awk/4.png]]
+
+** Pornind de la un director, sa se afiseze toate fisierele, din el si din subdirectoarele sale, care au proprietar diferit de proprietarul directorului in care se gasesc.
+#+INCLUDE: ./src/awk_05_owner_diff.sh src sh
+
+
+[[./screenshots/awk/5.png]]
+
+* Probleme de rezolvat folosind comanda grep
+
+** Sa se afiseze continutul tuturor fisierelor text din directorul dat ca parametru in linia de comanda si din subdirectoarele lui.
+#+INCLUDE: ./src/grep_01_show_text_files.sh src sh
+
+
+[[./screenshots/grep/1.png]]
+
+** Sa se afiseze numele fisierelor din linia de comanda care contin un anumit cuvant dat si el ca parametru in linia de comanda. Se cere sa se afiseze si numarul lor.
+#+INCLUDE: ./src/grep_02_files_with_word.sh src sh
+
+[[./screenshots/grep/2.png]]
+
+** Sa se afiseze numele tuturor fisierelor binare din directoarele date ca parametri in linia de comanda si din subdirectoarele acestora.
+#+INCLUDE: ./src/grep_03_binary_files.sh src sh
+
+[[./screenshots/grep/3.png]]
+
+** Sa se afiseze numele tuturor serverelor la care este conectat fiecare utilizator dat ca parametru in linia de comanda.
+#+INCLUDE: ./src/grep_04_user_servers.sh src sh
+
+[[./screenshots/grep/4.png]]
+
+** Sa se afiseze numele tuturor utilizatorilor din sistem care fac parte dintr-un anumit grup al carui identificator este dat ca parametru in linia de comanda. Sa se afiseze si numele grupului.
+#+INCLUDE: ./src/grep_05_users_by_gid.sh src sh
+
+[[./screenshots/grep/5.png]]
+
+* Probleme de rezolvat folosind utilitarul sed
+**  Se cere sa se stearga toate aparitiile cuvintelor date ca parametri din fisierul care este dat ca prim parametru.
+#+INCLUDE: ./src/sed_01_delete_words.sh src sh
+
+[[./screenshots/sed/1.png]]
+ 
+**  Sa se stearga toate liniile din fiserele date ca parametri care contin un anumit text indicat intr-un prim parametru.
+#+INCLUDE: ./src/sed_02_delete_lines_with_text.sh src sh
+
+[[./screenshots/sed/2.png]]
+ 
+**  Sa se stearga dintre primele 30 de linii din fisierele date ca parametri acelea care contin textul indicat de primul parametru.
+#+INCLUDE: ./src/sed_03_delete_first30_matching.sh src sh
+ 
+[[./screenshots/sed/3.png]]
+
+**  Sa se adauge in fata fiecarei litere mici cuvintul indicat ca prim parametru. Fisierele tratate sunt ceilalti parametri din linia de comanda.
+#+INCLUDE: ./src/sed_04_prefix_lowercase.sh src sh
+ 
+[[./screenshots/sed/4.png]]
+
+**  Sa se stearga toate cifrele din fisierele date ca parametri.
+#+INCLUDE: ./src/sed_05_delete_digits.sh src sh
+
+[[./screenshots/sed/5.png]]

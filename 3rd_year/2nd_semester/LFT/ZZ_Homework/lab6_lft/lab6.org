@@ -1,0 +1,123 @@
+#+title: Laborator 6
+#+subtitle: Limbaje Formale și Translatoare -- Generarea codului intermediar TAC in Rust
+#+include: ../config.org
+#+options: date:nil
+
+* Generare TAC manuala
+** Scrieti manual TAC-ul pentru expresia: $(a + b) * (c - 2)$. Definiti temporarele necesare si ordinea instructiunilor.
+#+begin_src text
+t0 = a + b
+t1 = c - 2
+t2 = t0 * t1
+#+end_src
+** Scrieti manual TAC-ul pentru: ~if (x > 0 && y > 0) { z = x + y; } else { z = 0; }~. Atentie: expresia ~&&~ trebuie si ea descompusa in temporare.
+#+begin_src text
+t0 = x > 0
+t1 = y > 0
+t2 = t0 And t1
+if t2 goto L_then
+goto L_else
+L_then:
+  t3 = x + y
+  z = t3
+  goto L_end
+L_else:
+  z = 0
+    L_end:
+    #+end_src
+** Scrieti manual TAC-ul pentru: ~let suma = 0; for i in 0..10 { suma = suma + i; }~. Hint: for se transforma in while.
+- Transformare in while:
+  #+begin_src text
+  let suma = 0;
+  let i = 0;
+  while i < 10 {
+    suma = suma + i;
+    i = i + 1;
+  }
+  #+end_src
+    
+- TAC:
+  #+begin_src text
+  suma = 0
+  i = 0
+  L_start:
+    t0 = i < 10
+    if t0 goto L_body
+    goto L_end
+  L_body:
+    t1 = suma + i
+    suma = t1
+    t2 = i + 1
+    i = t2
+    goto L_start
+  L_end:
+  #+end_src
+
+* Extinderea generatorului
+** Adaugati suportul pentru ~Stmt::Let~ cu un ~let~ fara initializare ~(let x;)~ -- codul generat ar trebui sa emita ~Copy { dst: Var(x), src: IntLit(0) }~ ca initializare implicita.
+#+INCLUDE: "./lab6_tac/src/ast.rs" src rust :lines "36-41"
+#+INCLUDE: "./lab6_tac/src/codegen.rs" src rust :lines "129-136"
+** Adaugati optimizarea 'eliminarea temporarelor redundante': daca generati ~t0 = x~ si imediat dupa ~y = t0~, inlocuiti cu ~y = x~ (fara temporar). Implementati aceasta ca post-procesare pe lista de instructiuni.
+#+INCLUDE: "./lab6_tac/src/codegen.rs" src rust :lines "185-204"
+- Pipeline:
+  #+INCLUDE: "./lab6_tac/src/main.rs" src rust :lines "29-33"
+** Adaugati un contor de instructiuni generate si o functie ~stats()~ care afiseaza: numarul de temporare utilizate, numarul de etichete, numarul de salturi, numarul de instructiuni aritmetice.
+#+INCLUDE: "./lab6_tac/src/codegen.rs" src rust :lines "5-10"
+#+INCLUDE: "./lab6_tac/src/codegen.rs" src rust :lines "206-226"
+
+* Interpretorul si verificarea corectitudinii
+** Adaugati in Interpreter capacitatea de a initializa variabile inainte de executie: o metoda ~set_var(name: &str, val: i64)~. Testati cu programul ~max(a, b)~ cu valorile $a=7$, $b=3$.
+#+INCLUDE: "./lab6_tac/src/interpreter.rs" src rust :lines "14-16"
+#+INCLUDE: "./lab6_tac/src/main.rs" src rust :lines "187-209"
+#+begin_example
+$ cargo test interpreter_set_var_works_for_max_like_program -- --nocapture
+running 1 test
+test tests::interpreter_set_var_works_for_max_like_program ... ok
+test result: ok. 1 passed; 0 failed
+#+end_example
+** Adaugati in Interpreter un mod de tracing: dupa fiecare instructiune executata, afisati starea memoriei (toate variabilele si temporarele). Rulati tracing pentru ~while~-ul din Test 3 si verificati ca $i$ creste de la 0 la 5.
+#+INCLUDE: "./lab6_tac/src/interpreter.rs" src rust :lines "36-44"
+#+INCLUDE: "./lab6_tac/src/interpreter.rs" src rust :lines "114-116"
+#+INCLUDE: "./lab6_tac/src/interpreter.rs" src rust :lines "126-128"
+#+INCLUDE: "./lab6_tac/src/main.rs" src rust :lines "211-239"
+#+begin_example
+$ cargo test interpreter_trace_runs_for_while_to_five -- --nocapture
+running 1 test
+step=1 pc=1 mem={i=0}
+...
+step=26 pc=8 mem={i=5, t0=1, t1=5}
+...
+test tests::interpreter_trace_runs_for_while_to_five ... ok
+test result: ok. 1 passed; 0 failed
+#+end_example
+** Adaugati detectia buclelor infinite: daca programul executa mai mult de 10000 de pasi fara ~return~ sau ~halt~, returneaza ~Err~ cu mesaj. Testati cu un ~while(true) {}~.
+#+INCLUDE: "./lab6_tac/src/interpreter.rs" src rust :lines "62-70"
+#+INCLUDE: "./lab6_tac/src/main.rs" src rust :lines "241-253"
+#+begin_example
+$ cargo test interpreter_detects_infinite_loop -- --nocapture
+running 1 test
+Executie oprita: posibil loop infinit (peste 10000 pasi)
+test tests::interpreter_detects_infinite_loop ... ok
+test result: ok. 1 passed; 0 failed
+#+end_example
+
+* Optimizari simple pe TAC
+** Implementati 'constant folding': daca in ~BinOp~ ambii operanzi sunt literale, calculati rezultatul la compilare si inlocuiti instructiunea cu ~Copy~. Exemplu: ~t0 = 3 * 4~ devine ~Copy { dst: t0, src: IntLit(12) }~.
+#+INCLUDE: "./lab6_tac/src/codegen.rs" src rust :lines "207-286"
+#+INCLUDE: "./lab6_tac/src/main.rs" src rust :lines "187-204"
+** Implementati 'dead code elimination': daca dupa un ~Return~ sau ~Goto~ urmeaza instructiuni pana la urmatoarea ~Label~, acele instructiuni nu pot fi executate niciodata. Eliminati-le.
+#+INCLUDE: "./lab6_tac/src/codegen.rs" src rust :lines "288-305"
+** Combinati cele doua optimizari si testati cu expresia $x = 2 + 3 * 4$. Fara optimizari: 3 instructiuni. Cu constant folding + DCE: ar trebui sa ramana doar $x = 14$.
+#+INCLUDE: "./lab6_tac/src/codegen.rs" src rust :lines "351-356"
+#+INCLUDE: "./lab6_tac/src/main.rs" src rust :lines "222-247"
+
+* Pipeline integrat cu Labs anterioare
+** Conectati generatorul TAC cu type checker-ul din Lab 5: type checker-ul ruleaza primul, iar daca nu sunt erori, se apeleaza generatorul TAC. Daca sunt erori semantice, generarea TAC se opreste.
+#+INCLUDE: "./lab6_tac/src/main.rs" src rust :lines "14-34"
+#+INCLUDE: "./lab6_tac/src/main.rs" src rust :lines "318-326"
+** Adaugati suportul pentru functii: ~Stmt::FnDecl { name, params, body }~. Genereaza o eticheta cu numele functiei, urmat de TAC-ul corpului, terminat cu halt. Apelul de functie ramane ca exercitiu avansat.
+#+INCLUDE: "./lab6_tac/src/ast.rs" src rust :lines "45-48"
+#+INCLUDE: "./lab6_tac/src/codegen.rs" src rust :lines "176-192"
+** Extindeti interpretorul sa suporte variabile de mediu (environment) la nivel de program, nu doar de functie. Testati un program cu doua functii simple.
+#+INCLUDE: "./lab6_tac/src/interpreter.rs" src rust :lines "135-142"
+#+INCLUDE: "./lab6_tac/src/main.rs" src rust :lines "362-385"

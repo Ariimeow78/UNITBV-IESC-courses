@@ -1,0 +1,468 @@
+% Created 2026-05-24 Sun 23:35
+% Intended LaTeX compiler: lualatex
+\documentclass[11pt]{article}
+\usepackage{amsmath}
+\usepackage{fontspec}
+\usepackage{graphicx}
+\usepackage{longtable}
+\usepackage{wrapfig}
+\usepackage{rotating}
+\usepackage[normalem]{ulem}
+\usepackage{capt-of}
+\usepackage{hyperref}
+\usepackage{minted}
+\usepackage{fontspec}
+\setmainfont{UT Sans}[
+BoldFont={UT Sans Bold},
+UprightFont={UT Sans Regular},
+FontFace={m}{n}{UT Sans Medium}
+]
+% Fallback fake italic using a slant
+\usepackage{etoolbox}
+\newcommand{\fakeitalic}[1]{{\addfontfeatures{FakeSlant=0.18}#1}}
+\AtBeginDocument{\renewcommand{\emph}[1]{\fakeitalic{#1}}}
+\usepackage{minted}
+\usepackage[a4paper,margin=3cm]{geometry}
+\usepackage{lastpage}
+\usepackage{fancyhdr}
+\usepackage{lastpage}
+\pagestyle{fancy}                % set fancy style
+\fancyhf{}                        % clear all headers and footers
+\cfoot{\thepage/\pageref*{LastPage}}  % center footer
+\renewcommand{\headrulewidth}{0pt}    % remove header line
+\renewcommand{\footrulewidth}{0pt}    % remove footer line
+% also override plain page style for first page
+\fancypagestyle{plain}{%
+\fancyhf{}%
+\cfoot{\thepage/\pageref*{LastPage}}%
+\renewcommand{\headrulewidth}{0pt}%
+\renewcommand{\footrulewidth}{0pt}%
+}
+\usepackage{url}
+\author{BAJCSI Elias-Robert}
+\date{}
+\title{N17 - teme lab07}
+\hypersetup{
+ pdfauthor={BAJCSI Elias-Robert},
+ pdftitle={N17 - teme lab07},
+ pdfkeywords={},
+ pdfsubject={},
+ pdfcreator={Emacs 30.2 (Org mode 9.7.39)}, 
+ pdflang={English}}
+\begin{document}
+
+\maketitle
+\section{Programare awk}
+\label{sec:orgb41e9c2}
+
+Problemele de mai jos se vor rezolva prin script-uri shell ce vor apela utilitarul awk
+\subsection{Sa se afiseze ora curenta sub forma}
+\label{sec:org5a6c7f4}
+
+ora xx, xx minute, xx secunde
+\begin{minted}[breaklines=true,breakanywhere=true,breaksymbol=,fontsize=\small,linenos=false]{sh}
+#!/usr/bin/env sh
+# Afiseaza ora curenta in formatul cerut.
+usage() {
+    echo "Usage: ${0}" >&2
+    echo "Prints current time as: ora xx, xx minute, xx secunde." >&2
+}
+
+[ "$#" -ne 0 ] && { usage; exit 1; }
+
+date '+%H %M %S' | awk '{printf "ora %s, %s minute, %s secunde\n", $1, $2, $3}'
+\end{minted}
+
+\begin{center}
+\includegraphics[width=.9\linewidth]{./screenshots/awk/1.png}
+\end{center}
+\subsection{Sa se afiseze procesele ce au consumat mai mult de 10s de unitate centrala.}
+\label{sec:orgd3d8b86}
+\begin{minted}[breaklines=true,breakanywhere=true,breaksymbol=,fontsize=\small,linenos=false]{sh}
+#!/usr/bin/env sh
+# Afiseaza procesele cu timp CPU total > 10 secunde.
+usage() {
+    echo "Usage: ${0}" >&2
+    echo "Lists processes with total CPU time greater than 10 seconds." >&2
+}
+
+[ "$#" -ne 0 ] && { usage; exit 1; }
+
+ps -e -o pid= -o user= -o comm= -o time= | awk '
+function to_seconds(t, n,a,s) {
+    n = split(t, a, ":")
+    if (n == 2) {
+        return a[1] * 60 + a[2]
+    }
+    if (n == 3) {
+        return a[1] * 3600 + a[2] * 60 + a[3]
+    }
+    return 0
+}
+{
+    sec = to_seconds($NF)
+    if (sec > 10) {
+        printf "PID=%s USER=%s CMD=%s CPU=%s (%ds)\n", $1, $2, $3, $NF, sec
+    }
+}'
+\end{minted}
+
+\begin{center}
+\includegraphics[width=.9\linewidth]{./screenshots/awk/2.png}
+\end{center}
+\subsection{Sa se listeze cele mai mari 10 fisiere dintr-un director dat ca parametru si din subdirectoarele sale, in ordine descrescatoare a lungimii}
+\label{sec:org8aa3839}
+\begin{minted}[breaklines=true,breakanywhere=true,breaksymbol=,fontsize=\small,linenos=false]{sh}
+#!/usr/bin/env sh
+# Listeaza cele mai mari 10 fisiere dintr-un director dat.
+usage() {
+    echo "Usage: ${0} DIR" >&2
+    echo "Lists top 10 largest files recursively in DIR." >&2
+}
+
+[ "$#" -ne 1 ] && { usage; exit 1; }
+
+find "$1" -type f -exec ls -ln {} + 2>/dev/null |
+awk '{print $5, $9}' |
+sort -nr |
+awk 'NR <= 10 {printf "%s bytes\t%s\n", $1, $2}'
+\end{minted}
+
+\begin{center}
+\includegraphics[width=.9\linewidth]{./screenshots/awk/3.png}
+\end{center}
+\subsection{Se da, in fisierul studenti.lst lista studentilor in formatul:}
+\label{sec:org530af15}
+
+Nume Prenume nume-utilizator grupa
+
+(coloanele sunt separate prin blancuri; numele compuse sunt separate prin '-'; exemplu: Popescu Ana-Maria pa12345 221 . Dandu-se o lista de grupe, sa se trimita fiecarui student cate un mesaj (mesajul se da intr-un fisier al carui nume este de asemenea dat ca parametru).
+\begin{minted}[breaklines=true,breakanywhere=true,breaksymbol=,fontsize=\small,linenos=false]{sh}
+#!/usr/bin/env sh
+# Trimite mesaj studentilor din grupele cerute pe baza fisierului studenti.lst.
+usage() {
+    echo "Usage: ${0} STUDENTI_LST MESAJ_TXT GRUPA1 [GRUPA2 ...]" >&2
+    echo "Sends message to users from requested groups." >&2
+}
+
+[ "$#" -lt 3 ] && { usage; exit 1; }
+
+students_file=$1
+message_file=$2
+shift 2
+
+if [ ! -f "$students_file" ] || [ ! -f "$message_file" ]; then
+    echo "Eroare: fisier inexistent" >&2
+    exit 1
+fi
+
+awk -v groups="$*" '
+BEGIN {
+    n = split(groups, g, " ")
+    for (i = 1; i <= n; i++) wanted[g[i]] = 1
+}
+{
+    # Format: Nume Prenume user grupa
+    if (NF >= 4 && ($4 in wanted)) {
+        print $3
+    }
+}' "$students_file" |
+while IFS= read -r user; do
+    if command -v mail >/dev/null 2>&1; then
+        mail -s "Mesaj laborator" "$user" < "$message_file"
+        echo "Trimis catre: $user"
+    else
+        echo "mail indisponibil; destinatar: $user"
+    fi
+done
+\end{minted}
+
+\begin{center}
+\includegraphics[width=.9\linewidth]{./screenshots/awk/4.png}
+\end{center}
+\subsection{Pornind de la un director, sa se afiseze toate fisierele, din el si din subdirectoarele sale, care au proprietar diferit de proprietarul directorului in care se gasesc.}
+\label{sec:org64d15c8}
+\begin{minted}[breaklines=true,breakanywhere=true,breaksymbol=,fontsize=\small,linenos=false]{sh}
+#!/usr/bin/env sh
+# Afiseaza fisierele al caror proprietar difera de proprietarul directorului parinte.
+usage() {
+    echo "Usage: ${0} DIR" >&2
+    echo "Lists files whose owner differs from parent directory owner." >&2
+}
+
+[ "$#" -ne 1 ] && { usage; exit 1; }
+
+find "$1" -type f 2>/dev/null | while IFS= read -r f; do
+    d=$(dirname "$f")
+    f_owner=$(ls -ldn "$f" | awk '{print $3}')
+    d_owner=$(ls -ldn "$d" | awk '{print $3}')
+    if [ "$f_owner" != "$d_owner" ]; then
+        printf "%s (owner file=%s, owner dir=%s)\n" "$f" "$f_owner" "$d_owner"
+    fi
+done
+\end{minted}
+
+
+\begin{center}
+\includegraphics[width=.9\linewidth]{./screenshots/awk/5.png}
+\end{center}
+\section{Probleme de rezolvat folosind comanda grep}
+\label{sec:orgcc089d4}
+
+\subsection{Sa se afiseze continutul tuturor fisierelor text din directorul dat ca parametru in linia de comanda si din subdirectoarele lui.}
+\label{sec:org96fbdec}
+\begin{minted}[breaklines=true,breakanywhere=true,breaksymbol=,fontsize=\small,linenos=false]{sh}
+#!/usr/bin/env sh
+# Afiseaza continutul tuturor fisierelor text din director si subdirectoare.
+usage() {
+    echo "Usage: ${0} DIR" >&2
+    echo "Prints content of text files found recursively in DIR." >&2
+}
+
+[ "$#" -ne 1 ] && { usage; exit 1; }
+
+find "$1" -type f 2>/dev/null | while IFS= read -r f; do
+    if LC_ALL=C grep -q '[^[:print:][:space:]]' "$f" 2>/dev/null; then
+        :
+    else
+        echo "===== $f ====="
+        cat "$f"
+    fi
+done
+\end{minted}
+
+
+\begin{center}
+\includegraphics[width=.9\linewidth]{./screenshots/grep/1.png}
+\end{center}
+\subsection{Sa se afiseze numele fisierelor din linia de comanda care contin un anumit cuvant dat si el ca parametru in linia de comanda. Se cere sa se afiseze si numarul lor.}
+\label{sec:org24c90f5}
+\begin{minted}[breaklines=true,breakanywhere=true,breaksymbol=,fontsize=\small,linenos=false]{sh}
+#!/usr/bin/env sh
+# Afiseaza fisierele din linia de comanda care contin cuvantul dat + numarul lor.
+usage() {
+    echo "Usage: ${0} WORD FILE1 [FILE2 ...]" >&2
+    echo "Prints file names containing WORD and their count." >&2
+}
+
+[ "$#" -lt 2 ] && { usage; exit 1; }
+
+word=$1
+shift
+
+matches=$(grep -l -- "$word" "$@" 2>/dev/null || true)
+[ -n "$matches" ] && printf "%s\n" "$matches"
+count=$(printf "%s\n" "$matches" | awk 'NF{c++} END{print c+0}')
+echo "Numar fisiere: $count"
+\end{minted}
+
+\begin{center}
+\includegraphics[width=.9\linewidth]{./screenshots/grep/2.png}
+\end{center}
+\subsection{Sa se afiseze numele tuturor fisierelor binare din directoarele date ca parametri in linia de comanda si din subdirectoarele acestora.}
+\label{sec:org7d98c92}
+\begin{minted}[breaklines=true,breakanywhere=true,breaksymbol=,fontsize=\small,linenos=false]{sh}
+#!/usr/bin/env sh
+# Afiseaza numele fisierelor binare din directoarele date (recursiv).
+usage() {
+    echo "Usage: ${0} DIR1 [DIR2 ...]" >&2
+    echo "Prints binary files found recursively in given directories." >&2
+}
+
+[ "$#" -lt 1 ] && { usage; exit 1; }
+
+for d in "$@"; do
+    find "$d" -type f 2>/dev/null | while IFS= read -r f; do
+        if LC_ALL=C grep -q '[^[:print:][:space:]]' "$f" 2>/dev/null; then
+            echo "$f"
+        fi
+    done
+done
+\end{minted}
+
+\begin{center}
+\includegraphics[width=.9\linewidth]{./screenshots/grep/3.png}
+\end{center}
+\subsection{Sa se afiseze numele tuturor serverelor la care este conectat fiecare utilizator dat ca parametru in linia de comanda.}
+\label{sec:orga20b8c6}
+\begin{minted}[breaklines=true,breakanywhere=true,breaksymbol=,fontsize=\small,linenos=false]{sh}
+#!/usr/bin/env sh
+# Afiseaza serverele (host-uri) la care este conectat fiecare utilizator dat.
+usage() {
+    echo "Usage: ${0} USER1 [USER2 ...]" >&2
+    echo "Prints remote servers each user is connected to." >&2
+}
+
+[ "$#" -lt 1 ] && { usage; exit 1; }
+
+for u in "$@"; do
+    echo "Utilizator: $u"
+    who | awk -v usr="$u" '
+        $1 == usr {
+            host = $NF
+            gsub(/[()]/, "", host)
+            if (host != "") seen[host] = 1
+        }
+        END {
+            n = 0
+            for (h in seen) {
+                print "  " h
+                n++
+            }
+            if (n == 0) print "  (niciun server remote detectat)"
+        }'
+done
+\end{minted}
+
+\begin{center}
+\includegraphics[width=.9\linewidth]{./screenshots/grep/4.png}
+\end{center}
+\subsection{Sa se afiseze numele tuturor utilizatorilor din sistem care fac parte dintr-un anumit grup al carui identificator este dat ca parametru in linia de comanda. Sa se afiseze si numele grupului.}
+\label{sec:orge350b13}
+\begin{minted}[breaklines=true,breakanywhere=true,breaksymbol=,fontsize=\small,linenos=false]{sh}
+#!/usr/bin/env sh
+# Afiseaza utilizatorii care au GID-ul dat si numele grupului.
+usage() {
+    echo "Usage: ${0} GID" >&2
+    echo "Prints users belonging to group with the specified GID." >&2
+}
+
+[ "$#" -ne 1 ] && { usage; exit 1; }
+
+gid=$1
+group_name=$(grep "^[^:]*:[^:]*:${gid}:" /etc/group | awk -F: 'NR==1{print $1}')
+
+if [ -z "$group_name" ]; then
+    echo "Nu exista grup cu GID=$gid"
+    exit 1
+fi
+
+echo "Grup: $group_name (GID=$gid)"
+awk -F: -v gid="$gid" '$4 == gid {print $1}' /etc/passwd
+\end{minted}
+
+\begin{center}
+\includegraphics[width=.9\linewidth]{./screenshots/grep/5.png}
+\end{center}
+\section{Probleme de rezolvat folosind utilitarul sed}
+\label{sec:org529380a}
+\subsection{Se cere sa se stearga toate aparitiile cuvintelor date ca parametri din fisierul care este dat ca prim parametru.}
+\label{sec:orgdf27021}
+\begin{minted}[breaklines=true,breakanywhere=true,breaksymbol=,fontsize=\small,linenos=false]{sh}
+#!/usr/bin/env sh
+# Sterge toate aparitiile cuvintelor date ca parametri din fisierul dat.
+usage() {
+    echo "Usage: ${0} FILE WORD1 [WORD2 ...]" >&2
+    echo "Deletes all occurrences of given words from FILE." >&2
+}
+
+[ "$#" -lt 2 ] && { usage; exit 1; }
+
+file=$1
+shift
+
+script=''
+for w in "$@"; do
+    script="${script};s/${w}//g"
+done
+
+sed "$script" "$file"
+\end{minted}
+
+\begin{center}
+\includegraphics[width=.9\linewidth]{./screenshots/sed/1.png}
+\end{center}
+\subsection{Sa se stearga toate liniile din fiserele date ca parametri care contin un anumit text indicat intr-un prim parametru.}
+\label{sec:org13b2f06}
+\begin{minted}[breaklines=true,breakanywhere=true,breaksymbol=,fontsize=\small,linenos=false]{sh}
+#!/usr/bin/env sh
+# Sterge liniile care contin textul dat din fisierele specificate.
+usage() {
+    echo "Usage: ${0} TEXT FILE1 [FILE2 ...]" >&2
+    echo "Deletes lines containing TEXT from each file." >&2
+}
+
+[ "$#" -lt 2 ] && { usage; exit 1; }
+
+text=$1
+shift
+
+for f in "$@"; do
+    echo "===== $f ====="
+    sed "/$text/d" "$f"
+done
+\end{minted}
+
+\begin{center}
+\includegraphics[width=.9\linewidth]{./screenshots/sed/2.png}
+\end{center}
+\subsection{Sa se stearga dintre primele 30 de linii din fisierele date ca parametri acelea care contin textul indicat de primul parametru.}
+\label{sec:org0ce4dd9}
+\begin{minted}[breaklines=true,breakanywhere=true,breaksymbol=,fontsize=\small,linenos=false]{sh}
+#!/usr/bin/env sh
+# Sterge dintre primele 30 linii pe cele care contin textul dat.
+usage() {
+    echo "Usage: ${0} TEXT FILE1 [FILE2 ...]" >&2
+    echo "Deletes matching TEXT lines only within first 30 lines." >&2
+}
+
+[ "$#" -lt 2 ] && { usage; exit 1; }
+
+text=$1
+shift
+
+for f in "$@"; do
+    echo "===== $f ====="
+    sed "1,30{/$text/d;}" "$f"
+done
+\end{minted}
+
+\begin{center}
+\includegraphics[width=.9\linewidth]{./screenshots/sed/3.png}
+\end{center}
+\subsection{Sa se adauge in fata fiecarei litere mici cuvintul indicat ca prim parametru. Fisierele tratate sunt ceilalti parametri din linia de comanda.}
+\label{sec:org72c9457}
+\begin{minted}[breaklines=true,breakanywhere=true,breaksymbol=,fontsize=\small,linenos=false]{sh}
+#!/usr/bin/env sh
+# Adauga in fata fiecarei litere mici cuvantul dat.
+usage() {
+    echo "Usage: ${0} PREFIX FILE1 [FILE2 ...]" >&2
+    echo "Prefixes each lowercase letter with PREFIX in each file." >&2
+}
+
+[ "$#" -lt 2 ] && { usage; exit 1; }
+
+prefix=$1
+shift
+
+for f in "$@"; do
+    echo "===== $f ====="
+    sed "s/[a-z]/${prefix}&/g" "$f"
+done
+\end{minted}
+
+\begin{center}
+\includegraphics[width=.9\linewidth]{./screenshots/sed/4.png}
+\end{center}
+\subsection{Sa se stearga toate cifrele din fisierele date ca parametri.}
+\label{sec:org0f2f75b}
+\begin{minted}[breaklines=true,breakanywhere=true,breaksymbol=,fontsize=\small,linenos=false]{sh}
+#!/usr/bin/env sh
+# Sterge toate cifrele din fisierele date.
+usage() {
+    echo "Usage: ${0} FILE1 [FILE2 ...]" >&2
+    echo "Deletes all digits from each file." >&2
+}
+
+[ "$#" -lt 1 ] && { usage; exit 1; }
+
+for f in "$@"; do
+    echo "===== $f ====="
+    sed 's/[0-9]//g' "$f"
+done
+\end{minted}
+
+\begin{center}
+\includegraphics[width=.9\linewidth]{./screenshots/sed/5.png}
+\end{center}
+\end{document}

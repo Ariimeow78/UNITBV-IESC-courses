@@ -1,0 +1,3 @@
+Acesta este un fisier text simplu.
+Contine cuvinte pentru grep si sed.
+Linia 3 are numarul 12345.
