@@ -1,0 +1,172 @@
+#+TITLE: DUT proiect
+#+DATE: <2026-10-22 Thu>
+#+INCLUDE: ../config.org
+
+# Pachete și culori pentru diagramele TikZ (se pot șterge liniile deja prezente în config.org)
+#+LATEX_HEADER: \usepackage{tikz}
+#+LATEX_HEADER: \usepackage{float}
+#+LATEX_HEADER: \usetikzlibrary{arrows.meta,calc}
+#+LATEX_HEADER: \definecolor{tblue}{HTML}{5BCEFA}
+#+LATEX_HEADER: \definecolor{tpink}{HTML}{F5A9B8}
+#+LATEX_HEADER: \definecolor{tblueL}{HTML}{D6F3FD}
+#+LATEX_HEADER: \definecolor{tdark}{HTML}{4A4A5A}
+
+* Diagrama bloc
+
+Diagrama bloc a DUT-ului (controler de ventilator pentru PC, ~fan_ctrl~) se găsește în Figura @@latex:\ref{fig:bloc}@@. Interfața APB este bidirecțională, deoarece DUT-ul răspunde cu date și cu semnalele de handshake.
+
+#+begin_export latex
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[font=\small,
+  arr/.style={-{Stealth[length=2.2mm]}, thick, tdark},
+  darr/.style={{Stealth[length=2.2mm]}-{Stealth[length=2.2mm]}, thick, tdark},
+  lab/.style={font=\scriptsize\ttfamily}]
+  \node[draw=tdark, thick, rounded corners=4pt, fill=tblueL, minimum width=4.6cm, minimum height=3.6cm, align=center]
+    (dut) at (0,0) {\textbf{FAN\_CTRL}\\ {\scriptsize controler de ventilator}};
+  \draw[darr] (-5.4,1)  -- (-2.3,1)  node[midway, above, font=\scriptsize] {Interfața APB};
+  \draw[arr]  (-5.4,0)  -- (-2.3,0)  node[midway, above, lab] {temp\_i};
+  \draw[arr]  (-5.4,-1) -- (-2.3,-1) node[midway, above, lab] {boost\_i};
+  \draw[arr]  (2.3,0.7)  -- (5.4,0.7)  node[midway, above, lab] {pwm\_o};
+  \draw[arr]  (2.3,-0.7) -- (5.4,-0.7) node[midway, above, lab] {alarm\_o};
+\end{tikzpicture}
+\caption{Diagrama bloc a controlerului de ventilator}
+\label{fig:bloc}
+\end{figure}
+#+end_export
+
+* Descrierea funcționalității generale a DUT-ului
+
+Controlerul de ventilator ~fan_ctrl~ reglează turația unui ventilator de PC în funcție de temperatura procesorului, așa cum se întâmplă pe o placă de bază obișnuită. Este un slave APB: parametrii curbei de ventilare se scriu în regiștri, iar software-ul poate citi starea modulului. Sub pragul ~T_LOW~ ventilatorul este oprit, iar peste prag turația crește liniar cu temperatura:
+
+\[ pwm\_o = \min\left(PWM\_MAX,\; PWM\_MIN + \frac{(temp\_i - T\_LOW) \cdot SLOPE}{16}\right) \]
+
+Împărțirea la 16 se face prin deplasare la dreapta. Un buton de boost forțează turația maximă. Dacă temperatura atinge pragul critic ~T_CRIT~, se activează ~alarm_o~ și ventilatorul merge la maxim, până când software-ul confirmă alarma.
+
+Se presupune că ~T_LOW < T_CRIT~ și ~PWM_MIN <= PWM_MAX~ (modulul nu verifică acest lucru). Semnalul PWM propriu-zis nu face parte din DUT, care furnizează doar factorul de umplere ~pwm_o~.
+
+* Interfețele DUT-ului
+
+Direcția semnalelor este considerată dinspre DUT. Modulul nu introduce stări de așteptare, deci ~PREADY~ este mereu 1.
+
+#+CAPTION: Semnalele interfeței APB
+#+ATTR_LATEX: :environment tabular :align |l|c|c|p{7.5cm}| :placement [H]
+| Nume semnal | Număr de biți | Direcție | Descriere                                                                                 |
+|-------------+---------------+----------+-------------------------------------------------------------------------------------------|
+| ~PCLK~      |             1 | Intrare  | Semnalul de ceas al modulului.                                                            |
+| ~PRESETn~   |             1 | Intrare  | Semnal de reset activ în 0, care readuce modulul în starea inițială.                      |
+| ~PSEL~      |             1 | Intrare  | Selectează modulul ca slave pentru transferul curent.                                     |
+| ~PENABLE~   |             1 | Intrare  | Marchează a doua fază (ACCESS) a unui transfer.                                           |
+| ~PWRITE~    |             1 | Intrare  | Tipul transferului: 1 pentru scriere, 0 pentru citire.                                    |
+| ~PADDR~     |             3 | Intrare  | Adresa registrului accesat.                                                               |
+| ~PWDATA~    |             8 | Intrare  | Datele care se scriu în registrul adresat.                                                |
+| ~PRDATA~    |             8 | Ieșire   | Datele citite din registrul adresat.                                                      |
+| ~PREADY~    |             1 | Ieșire   | Indică finalul transferului. Este mereu 1.                                                |
+| ~PSLVERR~   |             1 | Ieșire   | Semnalizează eroare de transfer. Se activează la scrierea într-un registru doar citire.   |
+
+#+CAPTION: Semnalele interfeței de intrare (senzor și buton)
+#+ATTR_LATEX: :environment tabular :align |l|c|c|p{7.5cm}| :placement [H]
+| Nume semnal | Număr de biți | Direcție | Descriere                                                                          |
+|-------------+---------------+----------+------------------------------------------------------------------------------------|
+| ~temp_i~    |             8 | Intrare  | Temperatura măsurată, în grade Celsius, fără semn.                                 |
+| ~boost_i~   |             1 | Intrare  | Buton de boost: cât timp este 1, ventilatorul funcționează la turație maximă.      |
+
+#+CAPTION: Semnalele interfeței de ieșire
+#+ATTR_LATEX: :environment tabular :align |l|c|c|p{7.5cm}| :placement [H]
+| Nume semnal | Număr de biți | Direcție | Descriere                                                                  |
+|-------------+---------------+----------+----------------------------------------------------------------------------|
+| ~pwm_o~     |             8 | Ieșire   | Factorul de umplere al semnalului PWM (0 = oprit, 255 = turație maximă).   |
+| ~alarm_o~   |             1 | Ieșire   | Alarmă de supraîncălzire, activă cât timp DUT-ul este în starea OVERTEMP.  |
+
+* Regiștrii modulului
+
+Modulul folosește un spațiu de adresare de 3 biți și oferă acces la 8 regiștri de câte 8 biți. Scrierea într-un registru doar citire nu are efect și activează ~PSLVERR~.
+
+#+CAPTION: Regiștrii DUT-ului
+#+ATTR_LATEX: :environment tabular :align |c|l|c|c|p{6cm}| :placement [H]
+| Adresă | Nume registru | Acces | Valoare reset | Descriere funcțională                                                |
+|--------+---------------+-------+---------------+----------------------------------------------------------------------|
+|    000 | ~CTRL~        | RW    | 0x00          | Controlul modulului (vezi Tabelul @@latex:\ref{tab:ctrl}@@).         |
+|    001 | ~STATUS~      | RO    | 0x00          | Starea automatului în biții [1:0], restul biților fiind 0.           |
+|    010 | ~T_LOW~       | RW    | 0x28          | Temperatura (40 °C) peste care pornește ventilatorul.                |
+|    011 | ~T_CRIT~      | RW    | 0x55          | Temperatura critică (85 °C), la care se intră în starea OVERTEMP.    |
+|    100 | ~PWM_MIN~     | RW    | 0x40          | Turația minimă a ventilatorului când este pornit.                    |
+|    101 | ~PWM_MAX~     | RW    | 0xFF          | Turația maximă, folosită și în stările BOOST și OVERTEMP.            |
+|    110 | ~SLOPE~       | RW    | 0x50          | Panta curbei, în 1/16 de treaptă de PWM pe grad (0x50 = 5 pe grad).  |
+|    111 | ~PWM_CUR~     | RO    | 0x00          | Valoarea curentă a ieșirii ~pwm_o~.                                  |
+
+Starea din ~STATUS~ este codificată astfel: 00 – OFF, 01 – RUN, 10 – BOOST, 11 – OVERTEMP.
+
+#+NAME: tab:ctrl
+#+CAPTION: Structura registrului CTRL
+#+ATTR_LATEX: :environment tabular :align |c|l|p{8cm}| :placement [H]
+| Bit | Nume        | Funcție                                                                                                        |
+|-----+-------------+----------------------------------------------------------------------------------------------------------------|
+| 7:3 | Reserved    | Rezervați pentru dezvoltări ulterioare (întotdeauna 0).                                                        |
+|   2 | ~ALARM_CLR~ | 1 – confirmă alarma și permite ieșirea din OVERTEMP, dacă temperatura a scăzut. Se resetează automat.         |
+|   1 | ~BOOST_SW~  | 1 – forțează turația maximă din software (la fel ca ~boost_i~).                                                |
+|   0 | ~ENABLE~    | 1 – activează controlerul; 0 – oprește ventilatorul (starea OVERTEMP ignoră acest bit, din motive de siguranță). |
+
+** Diagrame de stări
+
+*** A. FSM pentru controlul ventilatorului
+
+a. Stările principale sunt: OFF, RUN, BOOST, OVERTEMP.
+
+b. Tranzițiile sunt determinate de ~temp_i~, de pragurile ~T_LOW~ și ~T_CRIT~, de ~ENABLE~, de ~ALARM_CLR~ și de ~boost~, unde ~boost = ENABLE & (boost_i | BOOST_SW)~.
+
+c. În Figura @@latex:\ref{fig:fsm}@@ este ilustrată funcționarea DUT-ului. După reset se pornește din OFF, iar când modulul este activat și temperatura depășește ~T_LOW~ se trece în RUN, unde turația urmează curba ventilatorului. Din RUN se poate intra în BOOST, iar atât din RUN, cât și din BOOST, dacă ~temp_i >= T_CRIT~ se intră în OVERTEMP. De acolo se revine în RUN doar după ce temperatura scade sub ~T_CRIT~ și software-ul scrie ~ALARM_CLR~.
+
+#+begin_export latex
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[font=\small,
+  state/.style={draw=tdark, thick, rounded corners=6pt, minimum width=2.6cm, minimum height=1.2cm, align=center},
+  tr/.style={-{Stealth[length=2.4mm]}, thick, tdark},
+  cond/.style={font=\scriptsize\ttfamily, align=center, fill=white, inner sep=1.5pt}]
+  \node[state, fill=tblue]  (off)   at (0,0)    {\textbf{OFF}};
+  \node[state, fill=white]  (run)   at (5.5,0)  {\textbf{RUN}};
+  \node[state, fill=tpink]  (boost) at (11,0)   {\textbf{BOOST}};
+  \node[state, fill=tpink!60] (ot)  at (5.5,-3) {\textbf{OVERTEMP}};
+  \node[circle, fill=tdark, inner sep=2.5pt] (init) at (-2.2,0) {};
+  \draw[tr] (init) -- (off);
+  \draw[tr] (off.north east) to[bend left=30] node[midway, above, cond] {enable \& temp > T\_LOW} (run.north west);
+  \draw[tr] (run.south west) to[bend left=30] node[midway, below, cond] {!enable | temp <= T\_LOW} (off.south east);
+  \draw[tr] (run.north east) to[bend left=30] node[midway, above, cond] {boost = 1} (boost.north west);
+  \draw[tr] (boost.south west) to[bend left=30] node[midway, below, cond] {boost = 0} (run.south east);
+  \draw[tr] ($(run.south)+(0.5,0)$) -- ($(ot.north)+(0.5,0)$) node[midway, right, cond] {temp $\geq$ T\_CRIT};
+  \draw[tr] ($(ot.north)+(-0.5,0)$) -- ($(run.south)+(-0.5,0)$) node[midway, left, cond] {temp < T\_CRIT\\ \& ALARM\_CLR};
+  \draw[tr] (boost.south) |- (ot.east) node[pos=0.75, above, cond] {temp $\geq$ T\_CRIT};
+\end{tikzpicture}}
+\caption{Diagrama de stări a controlerului de ventilator}
+\label{fig:fsm}
+\end{figure}
+#+end_export
+
+*** B. FSM pentru interfața APB
+
+a. Stările sunt: IDLE, SETUP, ACCESS.
+
+b. Tranzițiile sunt determinate de ~PSEL~. Deoarece ~PREADY~ este mereu 1, faza ACCESS durează un singur ciclu, în care are loc citirea sau scrierea registrului (Figura @@latex:\ref{fig:apb}@@).
+
+#+begin_export latex
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[font=\small,
+  state/.style={draw=tdark, thick, rounded corners=6pt, minimum width=2.6cm, minimum height=1.2cm, align=center},
+  tr/.style={-{Stealth[length=2.4mm]}, thick, tdark},
+  cond/.style={font=\scriptsize\ttfamily, align=center, fill=white, inner sep=1.5pt}]
+  \node[state, fill=tblue] (idle)   at (0,0)   {\textbf{IDLE}};
+  \node[state, fill=white] (setup)  at (5,0)   {\textbf{SETUP}};
+  \node[state, fill=tpink] (access) at (10,0)  {\textbf{ACCESS}};
+  \draw[tr] (idle) -- (setup)   node[midway, above, cond] {PSEL = 1};
+  \draw[tr] (setup) -- (access) node[midway, above, cond] {PENABLE = 1};
+  \draw[tr] (access.south) -- ++(0,-1.4) -| (idle.south) node[pos=0.25, below, cond] {PSEL = 0};
+  \draw[tr] (access.north west) to[bend right=30] node[midway, above, cond] {PSEL = 1} (setup.north east);
+\end{tikzpicture}}
+\caption{Diagrama de stări a interfeței APB}
+\label{fig:apb}
+\end{figure}
+#+end_export

@@ -1,0 +1,40 @@
+#+PROPERTY: header-args :eval no-export
+#+LATEX_COMPILER: lualatex
+
+#+LATEX_HEADER: \usepackage{fontspec}
+#+LATEX_HEADER: \setmainfont{UT Sans}[
+#+LATEX_HEADER:   BoldFont={UT Sans Bold},
+#+LATEX_HEADER:   UprightFont={UT Sans Regular},
+#+LATEX_HEADER:   FontFace={m}{n}{UT Sans Medium}
+#+LATEX_HEADER: ]
+
+#+LATEX_HEADER: % Fallback fake italic using a slant
+#+LATEX_HEADER: \usepackage{etoolbox}
+#+LATEX_HEADER: \newcommand{\fakeitalic}[1]{{\addfontfeatures{FakeSlant=0.18}#1}}
+#+LATEX_HEADER: \AtBeginDocument{\renewcommand{\emph}[1]{\fakeitalic{#1}}}
+
+#+OPTIONS: toc:nil
+
+#+LATEX_HEADER: \usepackage{minted}
+
+#+LATEX_HEADER: \usepackage[a4paper,margin=3cm]{geometry}
+#+LATEX_HEADER: \usepackage{lastpage}
+
+#+LATEX_HEADER: \usepackage{fancyhdr}
+#+LATEX_HEADER: \usepackage{lastpage}
+#+LATEX_HEADER: \pagestyle{fancy}                % set fancy style
+#+LATEX_HEADER: \fancyhf{}                        % clear all headers and footers
+#+LATEX_HEADER: \cfoot{\thepage/\pageref*{LastPage}}  % center footer
+#+LATEX_HEADER: \renewcommand{\headrulewidth}{0pt}    % remove header line
+#+LATEX_HEADER: \renewcommand{\footrulewidth}{0pt}    % remove footer line
+
+#+LATEX_HEADER: % also override plain page style for first page
+#+LATEX_HEADER: \fancypagestyle{plain}{%
+#+LATEX_HEADER:   \fancyhf{}%
+#+LATEX_HEADER:   \cfoot{\thepage/\pageref*{LastPage}}%
+#+LATEX_HEADER:   \renewcommand{\headrulewidth}{0pt}%
+#+LATEX_HEADER:   \renewcommand{\footrulewidth}{0pt}%
+#+LATEX_HEADER: }
+
+#+LATEX_HEADER: \usepackage{url}
+

@@ -1,0 +1,47 @@
+#+TITLE: Laborator SIO - Propunere Proiect
+#+AUTHOR: Ariimia BAJCSI
+#+OPTIONS: toc:nil num:t
+
+* Numele lucrării
+
+Sistem inteligent de iluminat ambiental (Smart Desk Mood Light) cu bandă RGB și control direct prin registre AVR
+
+* Descrierea ideii
+
+Proiectul constă în realizarea unei lămpi inteligente de birou bazate pe o bandă LED RGB, a cărei luminozitate și culoare se adaptează automat în funcție de lumina ambientală citită de o fotorezistență (LDR). Un comutator mecanic (Outemu switch) permite schimbarea modurilor de funcționare (de exemplu: mod automat/adaptiv, mod focalizare, mod atmosferic/pauză).
+
+Banda LED RGB funcționează la un curent semnificativ mai mare decât cel suportat direct de pinii microcontrolerului, motiv pentru care fiecare canal de culoare (R, G, B) va fi comandat prin intermediul câte unui tranzistor bipolar (BJT) în configurație de comutator.
+
+Componente electronice uzuale, cu un comutator mecanic de tastatură, timer, PWM hardware, conversie analog-digitală și întreruperi externe la nivel de registru.
+
+Gestionarea întreruperilor externe: Utilizarea întreruperilor hardware (~INT0~ prin registrele ~EICRA~ și ~EIMSK~) pentru detectarea apăsării switch-ului mecanic Outemu.
+
+Comanda sarcinilor de putere cu tranzistoare BJT: Înțelegerea rolului tranzistorului ca comutator electronic pentru comandarea canalelor de curent ale benzii RGB.
+
+Partea hardware: schema bloc sau electrică inițială
+
+TODO
+
+Partea software: schema logică simplificată
+
+TODO
+
+Periferice pentru care se intenționează scrierea unui soft propriu
+
+Convertorul Analog-Digital (ADC): Configurarea manuală a registrelor pentru citirea tensiunii de la fotorezistență (LDR).
+
+Timerele Hardware (Timer0 & Timer2): Generarea semnalului PWM pe 3 canale prin scrierea directă în registrele de comparare (~OCRxx~).
+
+Modulul de Întreruperi Externe (INT0): Tratarea apăsării switch-ului mecanic Outemu direct în rutina de întrerupere.
+
+Componente necesare, preț și sursă de aprovizionare
+
+| NR. | Denumire | Preț (ron) | Sursa |
+|-----+----------+------------+-------|
+| 1 | Placă de dezvoltare GroundStudio Jade U1 | 29.00 RON | https://ardushop.ro/ro/plci-de-dezvoltare/1372-groundstudio-jade-u1-6427854020000.html |
+| 2 | Segment Bandă LED RGB | ~10.00 RON | Componentă proprie (estimat) |
+| 3 | 3x Tranzistoare BJT | ~3.00 RON | Componente proprii (estimat) |
+| 4 | Modul / Senzor de lumină (Fotorezistență LDR) | 3.50 RON | https://cleste.ro/senzor-de-lumina-ldr.html |
+| 5 | Switch Mecanic Outemu (Tastatură) | ~2.50 RON | Componentă proprie (estimat) |
+| 6 | Set Rezistențe de limitare/pull-down | ~1.50 RON | Componente proprii (estimat) |
+

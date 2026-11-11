@@ -1,0 +1,95 @@
+#+TITLE: Lucrarea de laborator nr. 6 - Protocolul IP
+#+AUTHOR: +Elias-Robert+ Ariimia BAJCSI
+#+INCLUDE: ../config.org
+#+OPTIONS: num:nil date:nil
+
+* Setup
+- SO: GNU/Linux, interfața =wlan0=, IP =192.168.1.6=
+- Destinația: =www.unitbv.ro= (=193.254.230.80=)
+- Trafic generat cu =traceroute=, capturat cu Wireshark pe =wlan0=
+
+/Nota: Pe Linux =traceroute= trimite pachete UDP/
+
+* Generarea și capturarea traficului
+** Terminal:
+
+#+BEGIN_SRC sh
+traceroute www.unitbv.ro 56
+traceroute www.unitbv.ro 2000
+traceroute www.unitbv.ro 3500
+#+END_SRC
+
+** Filtre folosite:
+- =ip.dst == 193.254.230.80= pentru pachetele trimise de mine
+- =icmp.type == 11= pentru răspunsurile routerelor
+- =ip.flags.mf == 1 || ip.frag_offset > 0= pentru fragmente
+
+Pentru fiecare pachet am dat dublu-click, am extins Internet Protocol Version 4 și am făcut screenshot.
+
+* Analiza datagramelor IP și răspunsuri la întrebări
+
+** Selectați primul mesaj ICMP Echo Request trimis de computerul dvs. şi extindeți partea de Internet Protocol a pachetului. Care este adresa IP a computerului dvs. ?
+=192.168.1.6= (Source Address, Frame 18).
+
+#+CAPTION: Frame 18
+[[./pics/56.png]]
+
+** Care este valoarea câmpului “upper layer protocol” în header-ul pachetului IP?
+17.
+
+** Câți octeți sunt în header-ul IP? Câți octeți sunt în payload-ul datagramei IP? Justificați răspunsul.
+Header: 20 de bytes (Header Length: 20 bytes (5)). Payload: 56 - 20 => 36 de bytes (Total Length minus header).
+
+** Această datagrama IP a fost fragmentată? Justificați răspunsul.
+Nu. More fragments este Not set, Fragment Offset este 0 și 56 de bytes e mult sub MTU (1500).
+
+** Care câmpuri din datagrama IP se schimbă întotdeauna de la o datagramă la următoarea, în această serie de mesaje ICMP?
+Identification și Header Checksum. TTL se schimbă doar la fiecare 3 datagrame, pentru că =traceroute= trimite 3 probe pentru fiecare TTL.
+
+** Care câmpuri rămân constante? Care câmpuri trebuie să rămână constante? Care câmpuri trebuie să se schimbe? De ce?
+Rămân constante: Version, Header Length, DSCP/ECN, Flags, Fragment Offset, Protocol, adresele sursă și destinație, Total Length.
+
+Trebuie să rămână constante: Version, Header Length, Protocol, adresele sursă și destinație (același flux).
+
+Trebuie să se schimbe: Identification (să se deosebească datagramele), TTL (=traceroute= îl crește ca să găsească fiecare router), Header Checksum (se recalculează când se schimbă header-ul).
+
+** Descrieți modelul pe care-l vedeți în valorile din câmpul Identification al datagramei IP.
+Nu am găsit un model. Valorile par aleatorii și nu cresc cu 1 (Frame 18-22: 23207, 5090, 4863, 59716, 10211). Fragmentele aceleiași datagrame au același ID.
+
+** Care este valoarea din câmpurile Identification şi TTL?
+Cel mai apropiat router este =192.168.1.1=. În primul lui răspuns (Frame 34): TTL = 64, Identification = =0xa855= (43093).
+
+** Rămân aceste valori neschimbate pentru toate replicile ICMP TTL-exceeded trimise la computerul dvs. de la cel mai apropiat router? De ce?
+TTL rămâne 64 în toate cele 9 răspunsuri (același router, aceeași valoare inițială). Identification se schimbă (43093, 43094, 43095), fiecare mesaj ICMP e o datagramă nouă.
+
+** Găsiți primul mesaj ICMP Echo Request care a fost trimis de către computerul dvs. după ce ați schimbat Packet Size la 2000 în pingplotter. A fost acel mesaj fragmentat de-a lungul mai multor datagrame IP? (Notă: dacă pachetul dvs. nu a fost fragmentat, folosiți fişierul ip-ethereal-trace-1 din arhiva wireshark-traces.zip).
+Da. 2000 de bytes depășește MTU-ul de 1500, deci 2 fragmente: =[2 IPv4 Fragments (1980 bytes): #367(1480), #368(500)]=.
+
+#+CAPTION: Frame 368
+[[./pics/2000.png]]
+
+** Tipăriți primul fragment al datagramei IP fragmentate. Ce informație din header-ul IP indică faptul că datagrama a fost fragmentată? Ce informație din header-ul IP indică dacă acesta este primul sau ultimul fragment? Cât de lungă este această datagramă IP?
+[[./pics/2000-frag1.png]]
+Fragmentarea se vede din More fragments = Set. Primul fragment are Fragment Offset = 0 și More fragments = Set (ultimul are More fragments = Not set). Datagrama are Total Length = 1500 de bytes (20 de header și 1480 de date).
+
+** Tipăriți al doilea fragment al datagramei. Ce informație din header-ul IP indică faptul că acesta nu este primul fragment? Există mai multe fragmente? Justificați răspunsul.
+Fragment Offset este 1480, deci nu e primul. Nu mai există alte fragmente: More fragments este Not set și 1480 + 500 = 1980, adică întreaga datagramă.
+
+** Care câmpuri se schimbă în header-ul IP între primul şi al doilea fragment?
+Total Length (1500 la 520), More fragments (1 la 0), Fragment Offset (0 la 1480) și Header Checksum (=0xf85c= la =0x1b78=). Identification rămâne =0x31b7=.
+
+** Câte fragmente au fost create din datagrama originală?
+3 fragmente: =[3 IPv4 Fragments (3480 bytes): #812(1480), #813(1480), #814(520)]=.
+
+#+CAPTION: Frame 814
+[[./pics/3500.png]]
+
+** Ce câmpuri s-au schimbat în header-ul IP de la un fragment la altul?
+[[./pics/3500-frag1.png]]
+[[./pics/3500-frag2.png]]
+- Total Length: 1500, 1500, 540
+- Fragment Offset: 0, 1480, 2960
+- More fragments: Set, Set, Not set
+- Header Checksum: =0x7f1a=, =0x7e61=, =0xa168=
+
+Identification rămâne =0xaaf9= pe toate.
